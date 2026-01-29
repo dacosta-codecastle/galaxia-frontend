@@ -8,6 +8,7 @@ import { iconMap } from '@/lib/icon-map';
 import { LogOut, CircleHelp, Loader2, AlertTriangle } from 'lucide-react';
 import { useConfirm } from '@/components/providers/ConfirmDialogProvider';
 import { useQuery } from '@tanstack/react-query';
+import { IconName } from '@/types';
 
 interface MenuItem {
     id: number;
@@ -21,6 +22,7 @@ type GroupedMenu = Record<string, MenuItem[]>;
 
 interface SettingsData {
     full_logo_url?: string;
+    site_name?: string;
 }
 
 export default function Sidebar() {
@@ -28,21 +30,21 @@ export default function Sidebar() {
     const { logout, user } = useAuth();
     const confirm = useConfirm();
 
-    const { data: menuGroups, isLoading: loadingMenu, isError: errorMenu } = useQuery({
+    const { data: menuGroups, isLoading: loadingMenu, isError: errorMenu } = useQuery<GroupedMenu>({
         queryKey: ['sidebar-menu'],
         queryFn: async () => {
-            const { data } = await api.get('/admin/menu');
-            return data as GroupedMenu;
+            const { data } = await api.get<GroupedMenu>('/admin/menu');
+            return data;
         },
         staleTime: 1000 * 60 * 60,
         retry: 1,
     });
 
-    const { data: settings } = useQuery({
+    const { data: settings } = useQuery<SettingsData>({
         queryKey: ['global-settings'],
         queryFn: async () => {
-            const { data } = await api.get('/admin/settings');
-            return data as SettingsData;
+            const { data } = await api.get<SettingsData>('/admin/settings');
+            return data;
         },
         staleTime: 1000 * 60 * 60,
     });
@@ -73,12 +75,16 @@ export default function Sidebar() {
                 )}
                 <span className="text-lg font-bold tracking-wide truncate">Galaxia CMS</span>
             </div>
-            ]
+
             <div className="p-6 pb-2 shrink-0">
                 <div className="flex items-center space-x-3 mb-4 p-2 rounded-xl hover:bg-slate-900/50 transition duration-300 border border-transparent hover:border-slate-800">
                     <div className="shrink-0 relative">
-                        {user.avatar ? (
-                            <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-full object-cover border border-slate-700 shadow-sm" />
+                        {user.image_url || user.avatar ? (
+                            <img
+                                src={user.image_url || user.avatar}
+                                alt={user.name}
+                                className="w-10 h-10 rounded-full object-cover border border-slate-700 shadow-sm"
+                            />
                         ) : (
                             <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 text-slate-300">
                                 <span className="font-bold text-lg">{user.name?.charAt(0).toUpperCase()}</span>
@@ -92,7 +98,7 @@ export default function Sidebar() {
                     </div>
                 </div>
             </div>
-            ]
+
             <nav className="flex-1 px-4 py-2 overflow-y-auto custom-scrollbar space-y-6">
                 {loadingMenu && (
                     <div className="flex flex-col items-center justify-center py-10 space-y-3 opacity-50">
@@ -114,7 +120,7 @@ export default function Sidebar() {
                         </h3>
                         <div className="space-y-1">
                             {items.map((item) => {
-                                const IconComponent = iconMap[item.icon] || CircleHelp;
+                                const IconComponent = iconMap[item.icon as IconName] || CircleHelp;
                                 const isActive = pathname.startsWith(item.route);
 
                                 return (

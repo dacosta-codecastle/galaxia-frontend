@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { Input } from '@/components/ui/Input';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { PasswordInput } from '@/components/ui/PasswordInput';
+import { User, Role, ApiResponse } from '@/types';
 
 const userSchema = z.object({
     name: z.string()
@@ -37,13 +38,15 @@ const userSchema = z.object({
 }, {
     message: "Las contraseñas no coinciden",
     path: ["confirmPassword"],
-}).refine((data) => {
-    return true;
 });
 
 type UserFormData = z.infer<typeof userSchema>;
 
-export default function UserForm({ userId }: { userId?: string }) {
+interface UserFormProps {
+    userId?: string;
+}
+
+export default function UserForm({ userId }: UserFormProps) {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const { data: roles, isLoading: loadingRoles } = useRoles();
@@ -67,28 +70,35 @@ export default function UserForm({ userId }: { userId?: string }) {
 
     useEffect(() => {
         if (userId) {
-            api.get(`/admin/users/${userId}`).then(({ data }) => {
-                let visualPhone = '';
-                if (data.phone) {
-                    const raw = data.phone.toString().replace(/^503/, '');
-                    visualPhone = raw.replace(/(\d{4})(\d{4})/, '$1-$2');
-                }
+            api.get<User>(`/admin/users/${userId}`)
+                .then(({ data }) => {
+                    let visualPhone = '';
+                    if (data.phone) {
+                        const raw = data.phone.toString().replace(/^503/, '');
+                        visualPhone = raw.replace(/(\d{4})(\d{4})/, '$1-$2');
+                    }
 
-                reset({
-                    name: data.name,
-                    email: data.email,
-                    phone: visualPhone,
-                    role: data.role || data.roles?.[0]?.name || '',
-                    status: data.status === 'active',
+                    reset({
+                        name: data.name,
+                        email: data.email,
+                        phone: visualPhone,
+                        role: data.role || (data.roles && data.roles.length > 0 ? data.roles[0].name : ''),
+                        status: data.status === 'active',
+                    });
+
+                    if (data.image_url || data.avatar) {
+                        setAvatarPreview(data.image_url || data.avatar || null);
+                    }
+                })
+                .catch((error) => {
+                    console.error(error);
+                    toast.error("Error al cargar usuario");
                 });
-
-                if (data.image_url || data.avatar) setAvatarPreview(data.image_url || data.avatar);
-            });
         }
     }, [userId, reset]);
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files?.[0]) {
+        if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             setAvatarFile(file);
             setAvatarPreview(URL.createObjectURL(file));
@@ -108,24 +118,28 @@ export default function UserForm({ userId }: { userId?: string }) {
 
         setLoading(true);
         try {
-            const dbPhone = `503${data.phone.replace(/-/g, '')}`;
+            const dbPhone = `503${data.phone.replace(/-/g, '')} `;
 
             const payload = {
-                ...data,
+                name: data.name,
+                email: data.email,
+                role: data.role,
                 phone: dbPhone,
                 status: data.status ? 'active' : 'disabled',
-                password: data.password || undefined,
+                ...(data.password ? { password: data.password } : {})
             };
-
-            delete (payload as any).confirmPassword;
 
             let currentId = userId;
 
             if (userId) {
-                await api.put(`/admin/users/${userId}`, payload);
+                await api.put<ApiResponse<User>>(`/admin/users/${userId}`, payload);
             } else {
-                const res = await api.post('/admin/users', payload);
-                currentId = res.data.data.id;
+                const res = await api.post<ApiResponse<User>>('/admin/users', payload);
+                if (res.data.data) {
+                    currentId = res.data.data.id.toString();
+                } else {
+                    currentId = (res.data as unknown as User).id.toString();
+                }
             }
 
             if (avatarFile && currentId) {
@@ -141,7 +155,8 @@ export default function UserForm({ userId }: { userId?: string }) {
             router.push('/users');
 
         } catch (error: any) {
-            toast.error(error.response?.data?.message || 'Error al guardar');
+            const msg = error.response?.data?.message || 'Error al guardar';
+            toast.error(msg);
         } finally {
             setLoading(false);
         }
@@ -234,7 +249,7 @@ export default function UserForm({ userId }: { userId?: string }) {
                                 className="w-full border rounded-lg pl-10 pr-4 py-2.5 text-sm font-medium outline-none bg-white appearance-none border-slate-300 focus:ring-2 focus:ring-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
                             >
                                 <option value="">Seleccionar Rol</option>
-                                {!loadingRoles && roles?.map((r: any) => (
+                                {!loadingRoles && roles?.map((r: Role) => (
                                     <option key={r.id} value={r.name}>{r.name}</option>
                                 ))}
                             </select>
