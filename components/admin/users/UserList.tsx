@@ -13,13 +13,23 @@ import { useConfirm } from '@/components/providers/ConfirmDialogProvider';
 import { useRoles } from '@/hooks/useRoles';
 import { useDebounce } from '@/hooks/useDebounce';
 import Can from '@/components/auth/Can';
+import { User, Role, PaginatedResponse } from '@/types';
+
+interface AxiosErrorType {
+    response?: {
+        data?: {
+            message?: string;
+        };
+    };
+    message?: string;
+}
 
 export default function UserList() {
-    const [page, setPage] = useState(1);
-    const [search, setSearch] = useState('');
+    const [page, setPage] = useState<number>(1);
+    const [search, setSearch] = useState<string>('');
     const debouncedSearch = useDebounce(search, 500);
-    const [roleFilter, setRoleFilter] = useState('');
-    const [statusFilter, setStatusFilter] = useState('');
+    const [roleFilter, setRoleFilter] = useState<string>('');
+    const [statusFilter, setStatusFilter] = useState<string>('');
 
     const confirm = useConfirm();
     const { data: roles } = useRoles();
@@ -28,7 +38,7 @@ export default function UserList() {
         setPage(1);
     }, [debouncedSearch, roleFilter, statusFilter]);
 
-    const { data, isLoading, isError, error, refetch } = useQuery({
+    const { data, isLoading, isError, error, refetch } = useQuery<PaginatedResponse<User>, AxiosErrorType>({
         queryKey: ['users', page, debouncedSearch, roleFilter, statusFilter],
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -37,7 +47,7 @@ export default function UserList() {
             if (roleFilter) params.append('role', roleFilter);
             if (statusFilter) params.append('status', statusFilter);
 
-            const res = await api.get(`/admin/users?${params.toString()}`);
+            const res = await api.get<PaginatedResponse<User>>(`/admin/users?${params.toString()}`);
             return res.data;
         },
         retry: 1,
@@ -55,8 +65,9 @@ export default function UserList() {
                     await api.delete(`/admin/users/${id}`);
                     toast.success('Usuario eliminado');
                     refetch();
-                } catch (error: any) {
-                    toast.error(error.response?.data?.message || 'Error al eliminar');
+                } catch (error) {
+                    const err = error as AxiosErrorType;
+                    toast.error(err.response?.data?.message || 'Error al eliminar');
                 }
             }
         });
@@ -68,7 +79,7 @@ export default function UserList() {
         <div className="p-10 text-center text-red-500 bg-red-50 rounded-xl border border-red-100 m-6">
             <AlertCircle className="w-10 h-10 mx-auto mb-2 opacity-50" />
             <p className="font-bold">Error al cargar usuarios</p>
-            <p className="text-sm opacity-80">{(error as any)?.response?.data?.message || (error as Error).message}</p>
+            <p className="text-sm opacity-80">{error?.response?.data?.message || error?.message}</p>
             <button onClick={() => refetch()} className="mt-4 px-4 py-2 bg-red-100 hover:bg-red-200 rounded-lg text-sm font-bold transition">Reintentar</button>
         </div>
     );
@@ -100,7 +111,7 @@ export default function UserList() {
                             onChange={(e) => setRoleFilter(e.target.value)}
                         >
                             <option value="">Todos los Roles</option>
-                            {roles?.map((r: any) => (
+                            {roles?.map((r: Role) => (
                                 <option key={r.id} value={r.name}>{r.name}</option>
                             ))}
                         </select>
@@ -141,8 +152,8 @@ export default function UserList() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                            {data?.data?.length > 0 ? (
-                                data.data.map((user: any) => (
+                            {data?.data && data.data.length > 0 ? (
+                                data.data.map((user) => (
                                     <tr key={user.id} className="hover:bg-slate-50/50 transition">
 
                                         <td className="px-6 py-4">
@@ -193,7 +204,6 @@ export default function UserList() {
                                             <div className="flex justify-end gap-2">
 
                                                 <Can permission="edit_users" fallback={
-
                                                     <span className="p-1.5 text-slate-200"><Lock className="w-4 h-4" /></span>
                                                 }>
                                                     <Link href={`/users/${user.id}`} className="p-1.5 hover:bg-slate-100 rounded text-slate-500 transition">
@@ -220,7 +230,7 @@ export default function UserList() {
                         </tbody>
                     </table>
                 </div>
-                <Pagination meta={data} onPageChange={setPage} />
+                {data && <Pagination meta={data} onPageChange={setPage} />}
             </Card>
         </div>
     );

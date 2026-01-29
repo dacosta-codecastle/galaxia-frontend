@@ -1,14 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/axios';
+import { Role, ApiResponse } from '@/types';
 
-export function useRoles() {
+export const useRoles = () => {
     return useQuery({
         queryKey: ['roles'],
         queryFn: async () => {
-            const { data } = await api.get('/admin/roles');
+            const { data } = await api.get<ApiResponse<Role[]> | Role[]>('/admin/roles');
 
-            return data.roles;
+            if (Array.isArray(data)) {
+                return data;
+            }
+
+            return (data as ApiResponse<Role[]>).data || [];
         },
-        staleTime: 1000 * 60 * 5,
+        staleTime: 1000 * 60 * 10,
     });
-}
+};
