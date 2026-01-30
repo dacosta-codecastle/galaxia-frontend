@@ -7,7 +7,12 @@ import { Edit2, Trash2, Plus, Folder, FolderOpen, FileText, Loader2, Search, Che
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/providers/ConfirmDialogProvider';
 import { usePermission } from '@/hooks/usePermission';
-import { Category } from '@/types/category';
+// Importamos los tipos
+import { Category, LaravelResource } from '@/types';
+
+interface AxiosErrorType {
+    response?: { data?: { message?: string } };
+}
 
 export default function CategoryList() {
     const [categories, setCategories] = useState<Category[]>([]);
@@ -22,7 +27,8 @@ export default function CategoryList() {
     const fetchCategories = async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('/admin/categories');
+            // Laravel Resource Collection devuelve { data: Category[] }
+            const { data } = await api.get<LaravelResource<Category[]>>('/admin/categories');
             setCategories(data.data);
         } catch (error) {
             console.error("Error cargando categorías:", error);
@@ -57,13 +63,13 @@ export default function CategoryList() {
                     await api.delete(`/admin/categories/${id}`);
                     toast.success('Categoría eliminada');
                     fetchCategories();
-                } catch (error: any) {
-                    toast.error(error.response?.data?.message || 'No se pudo eliminar');
+                } catch (error) {
+                    const err = error as AxiosErrorType;
+                    toast.error(err.response?.data?.message || 'No se pudo eliminar');
                 }
             }
         });
     };
-
 
     const buildTree = (cats: Category[], parentId: number | null = null): Category[] => {
         return cats
@@ -74,13 +80,11 @@ export default function CategoryList() {
             }));
     };
 
-
     const renderRow = (category: Category, level: number = 0): React.ReactNode => {
         const hasChildren = category.children && category.children.length > 0;
         const isExpanded = expandedIds.has(category.id);
 
         const isSearchMode = searchTerm.length > 0;
-
         const codeString = category.code ? category.code.toString() : '';
 
         const matchesSearch = isSearchMode && (

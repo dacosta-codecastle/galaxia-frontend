@@ -113,3 +113,35 @@ export interface Attribute {
     type: 'select' | 'color' | 'button';
     values: AttributeValue[];
 }
+
+
+export interface SeoConfig {
+    title: string | null;
+    description: string | null;
+    canonical_url: string | null;
+    robots_index: boolean;
+    robots_follow: boolean;
+    og_image: string | null;
+}
+
+export interface Category {
+    id: number;
+    name: string;
+    slug: string;
+    code: number;
+    description: string | null;
+    parent_id: number | null;
+    parent_name?: string;
+    children?: Category[];
+    sort_order: number;
+    is_active: boolean;
+    products_count?: number;
+    children_count?: number;
+    seo?: SeoConfig;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export type LaravelResource<T> = {
+    data: T;
+}

@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/Input';
 import { usePermission } from '@/hooks/usePermission';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import PermissionGate from '@/components/auth/PermissionGate';
+import { Category, LaravelResource } from '@/types';
 
 const schema = z.object({
     name: z.string().min(1, "El nombre es requerido"),
@@ -32,14 +33,26 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-export default function CategoryForm({ categoryId }: { categoryId?: string }) {
+interface CategoryFormProps {
+    categoryId?: string;
+}
+
+interface AxiosErrorType {
+    response?: {
+        data?: {
+            message?: string;
+            errors?: Record<string, string[]>;
+        }
+    };
+}
+
+export default function CategoryForm({ categoryId }: CategoryFormProps) {
     const router = useRouter();
     const { can } = usePermission();
     const [loading, setLoading] = useState(false);
-    const [parents, setParents] = useState<any[]>([]);
+    const [parents, setParents] = useState<Category[]>([]);
 
     const hasPermission = categoryId ? can('edit_categories') : can('create_categories');
-
     const requiredGatePermission = categoryId ? 'edit_categories' : 'create_categories';
 
     const [imageFile, setImageFile] = useState<File | null>(null);
@@ -62,12 +75,13 @@ export default function CategoryForm({ categoryId }: { categoryId?: string }) {
         const fetchData = async () => {
             try {
                 if (can('view_categories')) {
-                    const { data: listData } = await api.get('/admin/categories');
+                    // Tipamos la respuesta para obtener la lista de padres
+                    const { data: listData } = await api.get<LaravelResource<Category[]>>('/admin/categories');
                     setParents(listData.data);
                 }
 
                 if (categoryId) {
-                    const { data: catData } = await api.get(`/admin/categories/${categoryId}`);
+                    const { data: catData } = await api.get<LaravelResource<Category>>(`/admin/categories/${categoryId}`);
                     const cat = catData.data;
 
                     reset({
@@ -77,12 +91,12 @@ export default function CategoryForm({ categoryId }: { categoryId?: string }) {
                         description: cat.description || '',
                         parent_id: cat.parent_id?.toString() || '',
                         sort_order: cat.sort_order.toString(),
-                        is_active: cat.is_active,
+                        is_active: !!cat.is_active,
                         seo_title: cat.seo?.title || '',
                         seo_description: cat.seo?.description || '',
                         canonical_url: cat.seo?.canonical_url || '',
-                        robots_index: cat.seo?.robots_index,
-                        robots_follow: cat.seo?.robots_follow,
+                        robots_index: !!cat.seo?.robots_index,
+                        robots_follow: !!cat.seo?.robots_follow,
                     });
 
                     if (cat.seo?.og_image) setImagePreview(cat.seo.og_image);
@@ -140,10 +154,11 @@ export default function CategoryForm({ categoryId }: { categoryId?: string }) {
                 await api.post('/admin/categories', formData, config);
                 toast.success('Categoría creada exitosamente');
             }
-            router.push('/admin/categories');
-        } catch (error: any) {
-            const msg = error.response?.data?.errors?.og_image?.[0] ||
-                error.response?.data?.message ||
+            router.push('/categories');
+        } catch (error) {
+            const err = error as AxiosErrorType;
+            const msg = err.response?.data?.errors?.og_image?.[0] ||
+                err.response?.data?.message ||
                 'Error al guardar';
             toast.error(msg);
         } finally {
@@ -211,7 +226,7 @@ export default function CategoryForm({ categoryId }: { categoryId?: string }) {
                                     <SearchableSelect
                                         label="Categoría Padre"
                                         options={parentOptions}
-                                        value={watch('parent_id')}
+                                        value={watch('parent_id') || ''}
                                         onChange={(val) => setValue('parent_id', val, { shouldDirty: true })}
                                         disabled={!hasPermission}
                                         placeholder="Buscar padre por nombre o código..."

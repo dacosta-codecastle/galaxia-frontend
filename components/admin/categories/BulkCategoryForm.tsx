@@ -1,33 +1,64 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/axios';
 import { toast } from 'sonner';
-import { ArrowLeft, Layers, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Layers, AlertCircle, CheckCircle2, List } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
-import PermissionGate from '@/components/auth/PermissionGate';
+import { Category, LaravelResource } from '@/types';
+
+// Helper error
+interface AxiosErrorType {
+    response?: { data?: { message?: string } };
+    message?: string;
+}
+
+interface ParentOption {
+    id: number;
+    label: string;
+    code: number;
+}
 
 export default function BulkCategoryForm() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
-    const [parents, setParents] = useState<any[]>([]);
+    const [parents, setParents] = useState<ParentOption[]>([]);
 
-    const [parentId, setParentId] = useState('');
-    const [rawNames, setRawNames] = useState('');
+    const [parentId, setParentId] = useState<string>('');
+    const [rawNames, setRawNames] = useState<string>('');
 
-    const namesList = rawNames.split('\n').filter(n => n.trim() !== '');
+    // --- CORRECCIÓN 1: CÁLCULO ROBUSTO DE LISTA ---
+    // Usamos useMemo para calcular la lista cada vez que rawNames cambia.
+    // Regex /\r?\n/ maneja saltos de línea de Windows y Linux.
+    const namesList = useMemo(() => {
+        if (!rawNames) return [];
+        return rawNames
+            .split(/\r?\n/)                 // Dividir por saltos de línea
+            .map(line => line.trim())       // Limpiar espacios alrededor
+            .filter(line => line.length > 0); // Quitar líneas vacías
+    }, [rawNames]);
+
+    // --- CORRECCIÓN 2: BÚSQUEDA SEGURA DEL PADRE ---
+    // Buscamos convirtiendo ambos a String para evitar errores de tipo (number vs string)
+    const currentParentLabel = useMemo(() => {
+        if (!parentId) return 'Raíz (Nivel Principal)';
+        const found = parents.find(p => String(p.id) === String(parentId));
+        return found ? found.label : 'Desconocido';
+    }, [parentId, parents]);
 
     useEffect(() => {
         const fetchParents = async () => {
             try {
-                const { data } = await api.get('/admin/categories');
-                setParents(data.data.map((p: any) => ({
-                    id: p.id,
-                    label: p.name,
-                    code: p.code
-                })));
+                const { data } = await api.get<LaravelResource<Category[]>>('/admin/categories');
+                if (data.data) {
+                    setParents(data.data.map((p) => ({
+                        id: p.id,
+                        label: p.name,
+                        code: p.code ?? 0 // Fallback seguro
+                    })));
+                }
             } catch {
                 toast.error('Error cargando lista de categorías');
             }
@@ -45,22 +76,24 @@ export default function BulkCategoryForm() {
         try {
             const payload = {
                 parent_id: parentId || null,
-                names: rawNames
+                names: rawNames // Enviamos el texto crudo, el backend lo procesa igual
             };
 
             const response = await api.post('/admin/categories/bulk', payload);
             toast.success(response.data.message);
             router.push('/categories');
-        } catch (error: any) {
+        } catch (error) {
             console.error(error);
-            toast.error(error.response?.data?.message || 'Error en carga masiva');
+            const err = error as AxiosErrorType;
+            toast.error(err.response?.data?.message || 'Error en carga masiva');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="max-w-5xl mx-auto p-6">
+        <div className="max-w-5xl mx-auto p-6 pb-20">
+            {/* Header */}
             <div className="flex items-center gap-4 mb-8">
                 <button onClick={() => router.back()} className="p-2 hover:bg-white rounded-full transition shadow-sm border border-transparent hover:border-slate-200">
                     <ArrowLeft className="w-5 h-5" />
@@ -69,15 +102,17 @@ export default function BulkCategoryForm() {
                     <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
                         <Layers className="w-6 h-6 text-blue-600" /> Carga Masiva de Categorías
                     </h1>
-                    <p className="text-sm text-slate-500">Copia desde Excel y crea múltiples subcategorías en un solo paso.</p>
+                    <p className="text-sm text-slate-500">Copia listas desde Excel/Word y crea múltiples categorías en un click.</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
+                {/* COLUMNA IZQUIERDA: FORMULARIO */}
                 <div className="lg:col-span-2 space-y-6">
                     <Card className="p-6 space-y-8 shadow-md">
 
+                        {/* Paso 1: Selección de Padre */}
                         <div className="relative z-20 space-y-3">
                             <div className="flex items-center gap-2 mb-1">
                                 <span className="bg-slate-900 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full">1</span>
@@ -92,81 +127,105 @@ export default function BulkCategoryForm() {
                                 onChange={setParentId}
                             />
 
-                            <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-xs text-slate-500 flex gap-2">
-                                <AlertCircle className="w-4 h-4 shrink-0 text-blue-500" />
+                            <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-xs text-blue-700 flex gap-2">
+                                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                                 {parentId
-                                    ? <span>Las nuevas categorías serán <strong>hijas</strong> de la selección. Los códigos continuarán la secuencia de ese grupo.</span>
-                                    : <span>Las categorías se crearán en la <strong>raíz</strong> (Nivel principal).</span>}
+                                    ? <span>Las nuevas categorías se crearán DENTRO de <strong>{currentParentLabel}</strong>.</span>
+                                    : <span>Las categorías se crearán en la <strong>RAÍZ</strong> (sin padre superior).</span>}
                             </div>
                         </div>
 
                         <hr className="border-slate-100" />
 
+                        {/* Paso 2: Textarea */}
                         <div className="space-y-3">
-                            <div className="flex items-center gap-2 mb-1">
-                                <span className="bg-slate-900 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full">2</span>
-                                <label className="text-sm font-bold text-slate-900">Pega la lista de nombres</label>
+                            <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="bg-slate-900 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full">2</span>
+                                    <label className="text-sm font-bold text-slate-900">Pega la lista de nombres</label>
+                                </div>
+                                {namesList.length > 0 && (
+                                    <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3" /> {namesList.length} detectados
+                                    </span>
+                                )}
                             </div>
 
-                            <div className="relative">
+                            <div className="relative group">
                                 <textarea
-                                    className="w-full h-80 p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-slate-900 focus:border-transparent outline-none font-mono text-sm leading-relaxed shadow-inner"
-                                    placeholder={`Bermudas\nCamisetas\nPantalones\nCalcetines\n...`}
+                                    className="w-full h-96 p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none font-mono text-sm leading-relaxed shadow-inner transition-all resize-none"
+                                    placeholder={`Ejemplo:\nCamisetas\nPantalones\nZapatos\nAccesorios`}
                                     value={rawNames}
                                     onChange={(e) => setRawNames(e.target.value)}
                                 ></textarea>
 
-                                <div className="absolute bottom-4 right-4 text-xs font-bold text-slate-500 bg-white/90 px-3 py-1.5 rounded-full border shadow-sm backdrop-blur-sm">
-                                    {namesList.length} items
+                                {/* Contador flotante */}
+                                <div className="absolute bottom-4 right-4 text-xs font-bold text-slate-500 bg-white/90 px-3 py-1.5 rounded-lg border shadow-sm backdrop-blur-sm pointer-events-none">
+                                    {namesList.length} líneas válidas
                                 </div>
                             </div>
-                            <p className="text-xs text-slate-400 pl-1">Un nombre por línea. No incluyas códigos ni símbolos.</p>
+                            <p className="text-xs text-slate-400 pl-1">Escribe un nombre por línea. Las líneas vacías se ignorarán.</p>
                         </div>
                     </Card>
                 </div>
 
-                <div className="space-y-6">
-                    <Card className="p-0 overflow-hidden border-0 shadow-lg bg-slate-900 text-white">
+                {/* COLUMNA DERECHA: RESUMEN (Sticky) */}
+                <div className="space-y-6 lg:sticky lg:top-6 h-fit">
+                    <Card className="p-0 overflow-hidden border-0 shadow-xl bg-slate-900 text-white">
                         <div className="p-6 border-b border-slate-700 bg-slate-800/50">
                             <h3 className="font-bold text-lg flex items-center gap-2">
-                                <CheckCircle2 className="w-5 h-5 text-green-400" /> Resumen
+                                <List className="w-5 h-5 text-green-400" /> Resumen de Acción
                             </h3>
                         </div>
 
-                        <div className="p-6 space-y-5">
-                            <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-400">Destino (Padre)</span>
-                                <span className="font-bold text-white truncate max-w-[150px] text-right">
-                                    {parentId ? parents.find(p => p.id.toString() === parentId)?.label : 'Raíz (Principal)'}
+                        <div className="p-6 space-y-6">
+                            {/* Info Padre */}
+                            <div className="flex flex-col gap-1 pb-4 border-b border-slate-700/50">
+                                <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Destino</span>
+                                <span className="font-bold text-lg text-white truncate" title={currentParentLabel}>
+                                    {currentParentLabel}
                                 </span>
                             </div>
 
-                            <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-400">Cantidad a crear</span>
-                                <span className="font-bold text-3xl">{namesList.length}</span>
+                            {/* Info Cantidad */}
+                            <div className="flex flex-col gap-1 pb-4 border-b border-slate-700/50">
+                                <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Total a crear</span>
+                                <div className="flex items-baseline gap-2">
+                                    <span className={`font-bold text-4xl ${namesList.length > 0 ? 'text-green-400' : 'text-slate-600'}`}>
+                                        {namesList.length}
+                                    </span>
+                                    <span className="text-sm text-slate-400">categorías</span>
+                                </div>
                             </div>
 
-                            <div className="pt-4 border-t border-slate-700">
+                            {/* Botón Acción */}
+                            <div className="pt-2">
                                 <button
                                     onClick={handleSubmit}
                                     disabled={loading || namesList.length === 0}
-                                    className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold hover:bg-blue-50 transition-all active:scale-95 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
+                                    className={`
+                                        w-full py-4 rounded-xl font-bold flex items-center justify-center transition-all shadow-lg
+                                        ${namesList.length > 0 && !loading
+                                            ? 'bg-white text-slate-900 hover:bg-blue-50 active:scale-95'
+                                            : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-50'}
+                                    `}
                                 >
                                     {loading ? (
-                                        <span className="flex items-center gap-2">Procesando...</span>
+                                        <span className="flex items-center gap-2 animate-pulse">Guardando...</span>
                                     ) : (
-                                        'Crear Categorías'
+                                        'Confirmar Creación'
                                     )}
                                 </button>
                             </div>
                         </div>
                     </Card>
 
-                    <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-4">
-                        <h4 className="font-bold text-xs text-yellow-800 uppercase mb-2">Nota Importante</h4>
-                        <p className="text-xs text-yellow-700 leading-relaxed">
-                            El sistema generará automáticamente los códigos numéricos basándose en la secuencia del padre seleccionado. <br /><br />
-                            Revisa la ortografía antes de guardar, ya que deshacer una carga masiva requiere borrar uno por uno.
+                    <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-4 shadow-sm">
+                        <h4 className="font-bold text-xs text-yellow-800 uppercase mb-2 flex items-center gap-2">
+                            <AlertCircle className="w-3.5 h-3.5" /> Importante
+                        </h4>
+                        <p className="text-xs text-yellow-700 leading-relaxed text-justify">
+                            El sistema generará códigos automáticos (ej: 1001, 1002) continuando la secuencia del padre seleccionado. Revisa la ortografía antes de confirmar.
                         </p>
                     </div>
                 </div>
