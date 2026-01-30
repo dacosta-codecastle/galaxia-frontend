@@ -95,3 +95,21 @@ export type IconName =
     | 'Shield' | 'Globe' | 'Bell' | 'ShoppingBag'
     | 'CreditCard' | 'Receipt' | 'Store' | 'Box'
     | 'Warehouse' | 'Dumbbell' | 'HeartPulse' | 'Trophy' | 'Target';
+
+export interface AttributeValue {
+    id?: number;
+    value: string;
+    color_hex?: string;
+    secondary_color_hex?: string;
+    swatch_image?: string;
+    swatch_image_url?: string;
+    swatch_file?: File;
+    category_codes?: number[];
+}
+
+export interface Attribute {
+    id: number;
+    name: string;
+    type: 'select' | 'color' | 'button';
+    values: AttributeValue[];
+}
